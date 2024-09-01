@@ -11,9 +11,10 @@ jobs:
       - name: home
         run: echo $HOME
         shell: bash
-      - name: move to home
+      - name: mock env
         run: |
-          cd $HOME
+          mock -r centos-stream+epel-9-ppc64le --enable-net --shell --no-clean
+          cd /builddir/build/BUILD
           echo $pwd
           git clone https://github.com/sudeeshjohn/ceph.git
           cd ceph
