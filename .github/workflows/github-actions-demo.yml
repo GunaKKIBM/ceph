@@ -8,8 +8,19 @@ jobs:
       - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
       - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
       - run: echo "🔎 The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
-      - run: git clone https://github.com/sudeeshjohn/ceph.git
-      - run: cd ceph
-      - run: ls
-      - run: ./do_cmake.sh -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      - name: home
+        run: echo $HOME
+        shell: bash
+      - name: move to home
+        run: cd $HOME
+        shell: bash
+      - name: clone
+        run: git clone https://github.com/sudeeshjohn/ceph.git
+        shell: bash
+      - name: inside ceph
+        run: cd ceph 
+        shell: bash
+      - name: run script
+        run: ./do_cmake.sh -DCMAKE_BUILD_TYPE=RelWithDebInfo
+        shell: bash
       - run: echo "🍏 This job's status is ${{ job.status }}."
