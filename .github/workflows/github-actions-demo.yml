@@ -12,15 +12,12 @@ jobs:
         run: echo $HOME
         shell: bash
       - name: move to home
-        run: cd $HOME
-        shell: bash
-      - name: clone
-        run: git clone https://github.com/sudeeshjohn/ceph.git
-        shell: bash
-      - name: inside ceph
-        run: cd ceph 
-        shell: bash
-      - name: run script
-        run: ./do_cmake.sh -DCMAKE_BUILD_TYPE=RelWithDebInfo
+        run: |
+          cd $HOME
+          echo $pwd
+          git clone https://github.com/sudeeshjohn/ceph.git
+          cd ceph
+          ls
+          ./do_cmake.sh -DCMAKE_BUILD_TYPE=RelWithDebInfo
         shell: bash
       - run: echo "🍏 This job's status is ${{ job.status }}."
