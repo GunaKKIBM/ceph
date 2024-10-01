@@ -1,0 +1,25 @@
+name: GitHub Actions Demo
+run-name: ${{ github.actor }} is testing out GitHub Actions 🚀
+on: [push]
+jobs:
+  Explore-GitHub-Actions:
+    runs-on: ppc64le
+    steps:
+      - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
+      - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
+      - run: echo "🔎 The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
+      - name: home
+        run: echo $HOME
+        shell: bash
+      - name: mock env
+        run: |
+          mock  --rootdir=/home/mock/  --no-clean --shell  --enable-net
+          ls
+          cd /home
+          echo $pwd
+          git clone https://github.com/sudeeshjohn/ceph.git
+          cd ceph
+          ls
+          ./do_cmake.sh -DCMAKE_BUILD_TYPE=RelWithDebInfo
+        shell: bash
+      - run: echo "🍏 This job's status is ${{ job.status }}."
