@@ -2632,6 +2632,31 @@ int64_t BlueFS::_read_envmode(
   return r;
 }
 
+int64_t BlueFS::_read_from_cache(
+  FileReader *h,         ///< [in] read from here
+  uint64_t off,          ///< [in] offset
+  size_t len,            ///< [in] this many bytes
+  bufferlist *outbl,     ///< [out] optional: reference the result here
+  char *out)             ///< [out] optional: or copy it here
+{
+  dout(10) << __func__ << " h " << h
+           << " 0x" << std::hex << off << "~" << len << std::dec
+     << " from " << lock_fnode_print(h->file) << dendl;
+  if (BlueFSCache.cache.find(off) == BlueFSCache.end()) {
+    // if the offset is not in cache, return -ENOENT
+    dout(10) << __func__ << " offset 0x" << std::hex << off
+             << " not found in cache" << dendl;
+    return -ENOENT;
+  }
+
+  BlueFSCache.find(off).copy(out);
+  BlueFSCache.frequency[off]++;
+  dout(10) << __func__ << " read from cache: 0x"
+           << std::hex << BlueFSCache.find(off).length() << std::dec
+           << dendl;
+  return out.length();
+}
+
 int64_t BlueFS::_read(
   FileReader *h,         ///< [in] read from here
   uint64_t off,          ///< [in] offset
@@ -2639,6 +2664,25 @@ int64_t BlueFS::_read(
   bufferlist *outbl,     ///< [out] optional: reference the result here
   char *out)             ///< [out] optional: or copy it here
 {
+
+  if (cct->_conf->bluefs_cache_enabled) {
+    int64_t r = _read_from_cache(h, off, len, outbl, out);
+    if ( r > 0 ) {
+      // if we read something from cache, return it
+      dout(10) << __func__ << " read from cache: 0x"
+               << std::hex << r << std::dec << dendl;
+      return r;
+    } else if (r < 0 && r != -ENOENT) {
+      // if we failed to read from cache, log the error
+      derr << __func__ << " failed to read from cache: " << r << dendl;
+      return r;
+    } else {
+      // if we didn't read anything from cache, proceed with normal read
+      dout(10) << __func__ << " no data in cache, proceeding with normal read"
+               << dendl;
+    }
+  }
+
   auto t0 = mono_clock::now();
   FileReaderBuffer *buf = &(h->buf);
 
@@ -2749,6 +2793,15 @@ int64_t BlueFS::_read(
     t.substr_of(buf->bl, off - buf->bl_off, r);
     t.hexdump(*_dout);
     *_dout << dendl;
+    
+    if (cct->_conf->bluefs_cache_enabled) {
+    // update the cache
+    int r = _update_cache(h, offset, length);
+    if (r < 0) {
+       derr << __func__ << " failed to update cache, error: " << r << dendl;
+       return r;
+     }
+    }
 
     off += r;
     len -= r;
@@ -3935,6 +3988,72 @@ int BlueFS::_flush_range_F(FileWriter *h, uint64_t offset, uint64_t length)
   int res = _flush_data(h, offset, length, buffered);
   logger->tinc(l_bluefs_flush_lat, mono_clock::now() - t0);
   return res;
+}
+
+int BlueFS::_update_cache(FileWriter *h, uint64_t offset, uint64_t length) {
+    if BlueFSCache.cache.size() < cct->_conf->bluefs_cache_size {
+      // check if the offset exists in the cache
+      if (BlueFSCache.cache.find(offset) == BlueFSCache.cache.end()) {
+        BlueFSCache.cache.insert(offset, bl);
+        BlueFSCache.frequency.insert(offset, 1);
+        dout(20) << __func__ << " offset 0x" << std::hex << offset
+               << " not in cache, adding the buffer to cache" << std::dec << dendl;
+        return 0;
+      }
+      dout(20) << __func__ << " offset 0x" << std::hex << offset
+               << " found in cache, updating bufferlist" << std::dec << dendl;
+      // update the bufferlist in the cache
+      BlueFSCache.cache[offset] = bl; 
+      BlueFSCache.frequency[offset] += 1;
+      dout(20) << __func__ << " frequency of offset 0x" << std::hex << offset
+               << " is now " << BlueFSCache.frequency[offset] << std::dec << dendl;
+      return 0;
+  }
+  int r = _flush_data_in_cache(FileWriter *h);
+  if (r < 0) {
+    derr << __func__ << " failed to flush data in cache, error: " << r << dendl;
+    return r;
+  }
+  dout(20) << __func__ << " successfully flushed data in cache" << dendl;
+  r = _update_cache(h, offset, length);
+  if (r < 0) {
+    derr << __func__ << " failed to update cache, error: " << r << dendl;
+    return r;
+  }
+  dout(20) << __func__ << " successfully updated cache" << dendl;
+  return 0;
+}
+
+int BlueFS::_flush_data_in_cache(FileWriter *h)
+{
+  ceph_assert(ceph_mutex_is_locked(h->lock));
+  ceph_assert(h->file->fnode.ino > 1);
+
+  // TODO: Do we want to flush the complete cache at once?
+  // or should we flush only certain offsets (a configurable parameter)
+
+  // loop over the cache and flush data
+  for (auto& entry : BlueFSCache.cache) {
+    uint64_t offset = entry.first;
+    auto bl = entry.second;
+
+    /*
+    // Check if the bufferlist length is less than the requested length
+    if (bl.length() < h->get_buffer_length()) {
+      dout(20) << __func__ << " bufferlist length is less than requested length, nothing to flush" << dendl;
+      return -EINVAL; // or some other error code
+    }*/
+
+    dout(20) << __func__ << " flushing data in cache for h " << h
+           << " offset 0x" << std::hex << offset
+           << " length 0x" << length << std::dec << dendl;
+    // Flush the data in the cache
+    int r = _flush_data(h, offset, bl.length(), false);
+    if (r < 0) {
+      return r; // return error if flushing fails
+    }
+  }
+  return 0; // return success if all data flushed successfully
 }
 
 int BlueFS::_flush_data(FileWriter *h, uint64_t offset, uint64_t length, bool buffered)

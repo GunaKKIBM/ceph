@@ -4243,6 +4243,12 @@ options:
   level: advanced
   default: false
   with_legacy: true
+- name: bluefs_enable_cache
+  type: bool
+  default: false
+- name: bluefs_cache_size
+  type: size
+  default: 64_K
 - name: bluefs_buffered_io
   type: bool
   level: advanced

@@ -393,6 +393,15 @@ public:
   };
   using DirRef = ceph::ref_t<Dir>;
 
+  struct Cache {
+    FileRef file;
+    uint64_t offset;
+    std::unordered_map<uint64_t, ceph::buffer::list> cache;
+    std::map<uint64_t, uint64_t> frequency;
+  }
+
+  Cache BlueFSCache;
+
   struct FileWriter {
     MEMPOOL_CLASS_HELPERS();
 
